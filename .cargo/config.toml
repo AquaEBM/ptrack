@@ -1,6 +1,9 @@
+[build]
+
+rustflags = ["-Ctarget-cpu=native"]
+
 [profile.release]
 
-target-cpu = "native"
 codegen-units = 1
 panic = "abort"
 lto = "fat"
