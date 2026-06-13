@@ -1,0 +1,17 @@
+[package]
+
+name = "ptrack"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+
+crate-type = ["cdylib"]
+
+[dependencies]
+
+nice-plug = "0"
+nice-plug-egui = "0"
+egui = "0.34.1"
+realfft = "3"
+rtrb = "0.3"
