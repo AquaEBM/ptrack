@@ -30,13 +30,14 @@ impl Iterator for ThreeSmooth {
         let n2 = 2 * self.s[self.i2];
         let n3 = 3 * self.s[self.i3];
 
-        if n2 <= n3 {
-            self.s.push(n2);
-            self.i2 += 1;
+        let (push, add) = if n2 <= n3 {
+            (n2, &mut self.i2)
         } else {
-            self.s.push(n3);
-            self.i3 += 1;
-        }
+            (n3, &mut self.i3)
+        };
+
+        self.s.push(push);
+        *add += 1;
 
         Some(current)
     }

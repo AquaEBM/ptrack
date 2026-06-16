@@ -6,41 +6,27 @@ use std::sync::Arc;
 mod bislice;
 mod yin;
 
-struct Tuner {
-    params: Arc<TunerParams>,
+struct Sender {
     tx: rtrb::Producer<f32>,
+    editor_state: Arc<nice_plug_egui::EguiState>,
+}
+
+struct Tuner {
+    sender: Option<Sender>,
     sr: Arc<AtomicF32>,
-    rx: Option<rtrb::Consumer<f32>>,
 }
 
 impl Default for Tuner {
     fn default() -> Self {
-        let (tx, rx) = rtrb::RingBuffer::new(24000);
         Self {
-            params: Arc::new(TunerParams::default()),
-            tx,
+            sender: None,
             sr: Arc::new(AtomicF32::new(44100.)),
-            rx: Some(rx),
-        }
-    }
-}
-
-#[derive(Params)]
-struct TunerParams {
-    #[persist = "editor_state"]
-    editor_state: Arc<nice_plug_egui::EguiState>,
-}
-
-impl Default for TunerParams {
-    fn default() -> Self {
-        Self {
-            editor_state: nice_plug_egui::EguiState::from_size(400, 75),
         }
     }
 }
 
 impl Plugin for Tuner {
-    const NAME: &'static str = "TOP 10 PITCH TRACKER MOMENTOS";
+    const NAME: &'static str = "Pitch Tracker";
     const VENDOR: &'static str = "AquaEBM";
     const URL: &'static str = "www.github.com/AquaEBM";
     const EMAIL: &'static str = "AquaEBM@gmail.com";
@@ -60,7 +46,11 @@ impl Plugin for Tuner {
     type BackgroundTask = ();
 
     fn params(&self) -> Arc<dyn Params> {
-        self.params.clone()
+        // We have no parameters
+        #[derive(Params)]
+        struct TunerParams {}
+
+        Arc::new(TunerParams {})
     }
 
     fn initialize(
@@ -79,8 +69,13 @@ impl Plugin for Tuner {
         _aux: &mut AuxiliaryBuffers,
         _context: &mut impl ProcessContext<Self>,
     ) -> ProcessStatus {
-
-        let _ = self.tx.push_partial_slice(buffer.as_slice()[0]);
+        if let Some(sender) = &mut self.sender
+            && sender.editor_state.is_open()
+        {
+            let _ = sender
+                .tx
+                .push_partial_slice(buffer.as_slice().get(0).expect("INVALID PROCESS BUFFER"));
+        }
 
         ProcessStatus::Normal
     }
@@ -88,9 +83,13 @@ impl Plugin for Tuner {
     fn editor(&mut self, _async_executor: AsyncExecutor<Self>) -> Option<Box<dyn Editor>> {
         // TODO: move all this to another file
 
-        const WINDOW_LEN_S: f32 = 0.09;
-        const MAX_PERIOD_S: f32 = 0.03;
-        const THRESHOLD: f32 = 0.2;
+        const WINDOW_LEN_S: f32 = 0.08;
+        const MAX_PERIOD_S: f32 = 0.065;
+
+        const GUI_WINDOW_LEN_WIDTH: u32 = 415;
+        const GUI_WINDOW_LEN_HEIGHT: u32 = 100;
+
+        const YIN_TROUGH_THRESHOLD: f32 = 0.2;
         // AKA a maximum frequency of Fs / MIN_PERIOD_SAMPLES.
         const MIN_PERIOD_SAMPLES: f32 = 2.;
 
@@ -100,19 +99,31 @@ impl Plugin for Tuner {
 
         const C0_FREQ: f32 = 16.351597831287414;
 
+        let (tx, rx) = rtrb::RingBuffer::<f32>::new(16384);
+
+        let sender = Sender {
+            tx,
+            editor_state: nice_plug_egui::EguiState::from_size(
+                GUI_WINDOW_LEN_WIDTH,
+                GUI_WINDOW_LEN_HEIGHT,
+            ),
+        };
+
+        let editor_state = Arc::clone(&sender.editor_state);
+        self.sender = Some(sender);
         let sr = Arc::clone(&self.sr);
         let mut planner = realfft::RealFftPlanner::<f32>::new();
 
         nice_plug_egui::create_egui_editor(
-            Arc::clone(&self.params.editor_state),
+            editor_state,
             (
                 yin::Yin::new(&mut planner, 0, num::NonZeroUsize::MIN),
                 planner,
-                self.rx.take().expect("ERROR"),
+                rx,
                 440.0,
                 false,
             ),
-            nice_plug_egui::EguiSettings::default(),
+            Default::default(),
             |_, _, _| {},
             move |ui, _setter, _queue, (yin, planner, rx, last_freq, has_pitch)| {
                 let slots = rx.slots();
@@ -130,7 +141,7 @@ impl Plugin for Tuner {
                     *yin = yin::Yin::new(planner, window_len, max_period);
                 }
 
-                if let Some((period, unused_lags)) = yin.process(slice, THRESHOLD) {
+                if let Some((period, unused_lags)) = yin.process(slice, YIN_TROUGH_THRESHOLD) {
                     if let Some(tau) = period.filter(|&p| p > MIN_PERIOD_SAMPLES) {
                         *last_freq = sr_value / tau;
                         *has_pitch = true;
@@ -154,6 +165,8 @@ impl Plugin for Tuner {
                 } else {
                     Color32::from_rgb(255, 0, 0)
                 };
+
+                ui.add_space(15.);
 
                 ui.vertical_centered(|ui| {
                     ui.label(egui::RichText::new("NO PITCH").color(col).size(20.));
@@ -200,4 +213,12 @@ impl ClapPlugin for Tuner {
     const CLAP_FEATURES: &'static [ClapFeature] = &[ClapFeature::NoteDetector];
 }
 
+impl Vst3Plugin for Tuner {
+    const VST3_CLASS_ID: [u8; 16] = *b"aebmpitchtracker";
+
+    const VST3_SUBCATEGORIES: &'static [Vst3SubCategory] =
+        &[Vst3SubCategory::Tools, Vst3SubCategory::Analyzer];
+}
+
 nice_export_clap!(Tuner);
+nice_export_vst3!(Tuner);
