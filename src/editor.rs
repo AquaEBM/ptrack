@@ -5,7 +5,7 @@ use crate::yin;
 const WINDOW_LEN_S: f32 = 0.08;
 const MAX_PERIOD_S: f32 = 0.065;
 
-const YIN_TROUGH_THRESHOLD: f32 = 0.3;
+const YIN_TROUGH_THRESHOLD: f32 = 0.24;
 
 const NOTE_NAMES: [&str; 12] = [
     "C ", "C#", "D ", "D#", "E ", "F ", "F#", "G ", "G#", "A ", "A#", "B ",
