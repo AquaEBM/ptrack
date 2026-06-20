@@ -1,7 +1,5 @@
 use core::num;
 
-use egui::Color32;
-
 use crate::yin;
 
 const WINDOW_LEN_S: f32 = 0.08;
@@ -23,45 +21,63 @@ fn display_gui(
     note_class_name: &str,
     note_octave: isize,
 ) {
+    use egui::{Align, Color32, FontFamily, Layout, RichText};
+
     let col = if has_pitch {
         Color32::from_rgb(60, 60, 60)
     } else {
         Color32::from_rgb(255, 0, 0)
     };
 
-    ui.add_space(15.);
+    ui.add_space(16.);
 
     ui.vertical_centered(|ui| {
-        ui.label(egui::RichText::new("NO PITCH").color(col).size(20.));
+        ui.label(
+            RichText::new("NO PITCH")
+                .family(FontFamily::Monospace)
+                .color(col)
+                .size(18.),
+        );
     });
 
-    ui.horizontal(|ui| {
-        ui.add_sized(
-            [130.0, 44.0],
-            egui::Label::new(
-                egui::RichText::new(format!("{:^9.2} Hz", freq))
+    ui.horizontal_centered(|ui| {
+        ui.with_layout(Layout::top_down(Align::Min).with_main_justify(true), |ui| {
+            ui.label(
+                RichText::new(format!("{:>10.2} Hz", freq))
+                    .family(FontFamily::Monospace)
                     .color(Color32::from_rgb(0, 255, 0))
-                    .size(20.),
-            ),
-        );
+                    .size(24.),
+            )
+        });
+
         ui.separator();
-        ui.add_sized(
-            [110.0, 52.0],
-            egui::Label::new(
-                egui::RichText::new(format!("{note_class_name}{note_octave:<2}"))
-                    .color(Color32::YELLOW)
-                    .size(40.),
-            ),
+
+        ui.with_layout(
+            Layout::top_down(Align::Min).with_main_justify(true),
+            |ui| {
+                ui.label(
+                    RichText::new(format!("{note_class_name}{note_octave:>2}"))
+                        .family(FontFamily::Monospace)
+                        .color(Color32::YELLOW)
+                        .size(40.),
+                )
+            },
         );
+
         ui.separator();
-        ui.add_sized(
-            [130.0, 44.0],
-            egui::Label::new(
-                egui::RichText::new(format!("({:>+4.2} cts)", err_cents))
-                    .color(Color32::YELLOW)
-                    .size(20.),
-            ),
-        );
+
+        ui.with_layout(Layout::top_down(Align::Min).with_main_justify(true), |ui| {
+            ui.label(
+                RichText::new(format!(
+                    " {}{:>5.2} cts",
+                    if err_cents >= 0. { "+" } else { "-" },
+                    err_cents.abs()
+                ))
+                .family(FontFamily::Monospace)
+                .color(Color32::YELLOW)
+                .size(24.),
+            )
+        });
     });
 }
 
@@ -80,7 +96,7 @@ impl EditorState {
             yin: yin::Yin::new(&mut planner, 0, num::NonZeroUsize::MIN),
             planner,
             rx,
-            last_freq: 440.0,
+            last_freq: 440.,
             has_pitch: false,
         }
     }

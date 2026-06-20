@@ -78,8 +78,8 @@ impl Plugin for Tuner {
     }
 
     fn editor(&mut self, _async_executor: AsyncExecutor<Self>) -> Option<Box<dyn Editor>> {
-        const GUI_WINDOW_LEN_WIDTH: u32 = 415;
-        const GUI_WINDOW_LEN_HEIGHT: u32 = 100;
+        const GUI_WINDOW_LEN_WIDTH: u32 = 515;
+        const GUI_WINDOW_LEN_HEIGHT: u32 = 110;
 
         let (tx, rx) = rtrb::RingBuffer::<f32>::new(16384);
 

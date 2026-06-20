@@ -109,8 +109,8 @@ impl Yin {
 
         for (ref_bin, sig_bin) in iter::zip(&mut *rs, &*ss) {
             // ref_bin = ref_bin * sig_bin.conj()
-            let re = f32::mul_add(ref_bin.re, sig_bin.re, ref_bin.im * sig_bin.im);
-            let im = f32::mul_add(ref_bin.im, sig_bin.re, -ref_bin.re * sig_bin.im);
+            let re = ref_bin.re.mul_add(sig_bin.re, ref_bin.im * sig_bin.im);
+            let im = ref_bin.im.mul_add(sig_bin.re, -ref_bin.re * sig_bin.im);
             *ref_bin = Complex::new(re, im);
         }
 
@@ -145,7 +145,7 @@ impl Yin {
         });
 
         let fft_len = self.fft.len() as f32;
-        let autocorr_scale = fft_len * fft_len * init_e;
+        let autocorr_scale = -0.5 / (fft_len * init_e.sqrt());
         let autocorr_slice = self.calculate_autocorr(signal);
 
         let mut autocorrs = autocorr_slice.iter();
@@ -153,7 +153,7 @@ impl Yin {
 
         let diffs = energies
             .zip(autocorrs)
-            .map(move |(e, a)| 1. - a * a / (autocorr_scale * e));
+            .map(move |(e, a)| autocorr_scale.mul_add(a / e.sqrt(), 0.5));
 
         let mut diffs_sdiffs = diffs.scan(0., |acc, x| {
             let sd = x + *acc;
@@ -176,6 +176,7 @@ impl Yin {
         let mut p = None;
 
         for (d, sd) in diffs_sdiffs {
+
             let next_tau = tau + 1.;
             let dp = next_tau * d / sd;
 
