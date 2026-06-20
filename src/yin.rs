@@ -1,47 +1,8 @@
+use super::util;
 use core::{cmp, iter, num};
 use std::sync::Arc;
 
 use realfft::num_complex::Complex;
-
-pub struct ThreeSmooth {
-    s: Vec<usize>,
-    i2: usize,
-    i3: usize,
-}
-
-impl ThreeSmooth {
-    #[inline]
-    pub fn new() -> Self {
-        Self {
-            s: vec![1],
-            i2: 0,
-            i3: 0,
-        }
-    }
-}
-
-impl Iterator for ThreeSmooth {
-    type Item = usize;
-
-    #[inline]
-    fn next(&mut self) -> Option<Self::Item> {
-        let current = *self.s.last().unwrap();
-
-        let n2 = 2 * self.s[self.i2];
-        let n3 = 3 * self.s[self.i3];
-
-        let (push, add) = if n2 <= n3 {
-            (n2, &mut self.i2)
-        } else {
-            (n3, &mut self.i3)
-        };
-
-        self.s.push(push);
-        *add += 1;
-
-        Some(current)
-    }
-}
 
 pub struct Yin {
     fft: Arc<dyn realfft::RealToComplex<f32>>,
@@ -62,7 +23,7 @@ impl Yin {
         lag_sup: num::NonZeroUsize,
     ) -> Self {
         let fft_len = Self::length_fft(window_len, lag_sup);
-        let fft_len = ThreeSmooth::new().find(|&n| n >= fft_len).unwrap();
+        let fft_len = util::ThreeSmooth::new().find(|&n| n >= fft_len).unwrap();
         let fft = planner.plan_fft_forward(fft_len);
         let ifft = planner.plan_fft_inverse(fft_len);
         let scratch_len = cmp::max(fft.get_scratch_len(), ifft.get_scratch_len());
@@ -88,7 +49,15 @@ impl Yin {
     }
 
     #[inline(always)]
+    #[allow(unused)]
     pub fn fft_len(&self) -> usize {
+        self.window_len
+            .strict_mul(2)
+            .strict_add(self.lag_sup.get().strict_sub(1))
+    }
+
+    #[inline(always)]
+    pub fn fft_len_padded(&self) -> usize {
         self.autocorr_scratch.len()
     }
 
@@ -98,8 +67,8 @@ impl Yin {
     }
 
     #[inline]
-    pub fn calculate_autocorr(&mut self, signal: super::bislice::DoubleSlice<f32>) -> &mut [f32] {
-        let fft_len = self.fft_len();
+    fn calculate_autocorr(&mut self, signal: bislice::BiSlice<f32>) -> &mut [f32] {
+        let fft_len = self.fft_len_padded();
         let w = self.window_len;
         let rs = self.ref_spec.as_mut();
         let ss = self.sig_spec.as_mut();
@@ -122,7 +91,7 @@ impl Yin {
 
         ref_zeroed.fill(0.);
 
-        super::bislice::DoubleSliceMut::from_single(ref_out)
+        bislice::DoubleSliceMut::from_single(ref_out)
             .copy_from_slice(reference)
             .unwrap();
 
@@ -132,7 +101,7 @@ impl Yin {
 
         sig_zeroed.fill(0.);
 
-        super::bislice::DoubleSliceMut::from_single(sig_out)
+        bislice::DoubleSliceMut::from_single(sig_out)
             .copy_from_slice(sig)
             .unwrap();
 
@@ -153,7 +122,7 @@ impl Yin {
     #[inline]
     pub fn process(
         &mut self,
-        signal: super::bislice::DoubleSlice<f32>,
+        signal: bislice::BiSlice<f32>,
         threshold: f32,
     ) -> Option<(Option<f32>, usize)> {
         let Some(in_lags) = signal.len().checked_sub(self.window_len) else {
@@ -164,61 +133,66 @@ impl Yin {
 
         let unused_lags = in_lags.saturating_sub(self.lag_sup.get().strict_sub(1));
 
-        // sum x_i^2 + sum x_{i+tau}^2
-        let mut current_energy = 2.
-            * first_window
-                .iter()
-                .fold(0.0, |acc, &x| f32::mul_add(x, x, acc));
+        let init_e = first_window.iter().fold(0., |s, &x| x.mul_add(x, s));
 
-        let mut e_lost = signal.iter().rev();
-        let mut e_gained = lagged.iter().rev();
+        let e_lost = signal.iter().rev();
+        let e_gained = lagged.iter().rev();
 
-        let mut cumsum = 0f32;
-        let mut current_lag = 0u32;
-        let mut prev_n_diff = 1f32;
-        let mut prev_prev_n_diff = 1f32;
+        let energies = e_lost.zip(e_gained).scan(init_e, |e, (&l, &g)| {
+            let ne = l.mul_add(-l, g.mul_add(g, *e));
+            *e = ne;
+            Some(ne)
+        });
 
-        let autocorr_scale = -2. / self.fft.len() as f32;
+        let fft_len = self.fft.len() as f32;
+        let autocorr_scale = fft_len * fft_len * init_e;
+        let autocorr_slice = self.calculate_autocorr(signal);
 
-        let autocorr = self.calculate_autocorr(signal);
-
-        let mut autocorrs = autocorr.iter();
+        let mut autocorrs = autocorr_slice.iter();
         autocorrs.next(); // skip lag 0
 
-        for &autocorr in autocorrs {
-            let &lost = e_lost.next().unwrap();
-            let &gained = e_gained.next().unwrap();
+        let diffs = energies
+            .zip(autocorrs)
+            .map(move |(e, a)| 1. - a * a / (autocorr_scale * e));
 
-            current_lag = current_lag.strict_add(1);
+        let mut diffs_sdiffs = diffs.scan(0., |acc, x| {
+            let sd = x + *acc;
+            *acc = sd;
+            Some((x, sd))
+        });
 
-            current_energy =
-                f32::mul_add(-lost, lost, f32::mul_add(gained, gained, current_energy));
+        // d(k-2)
+        let mut dm2 = 0.;
+        // d(k-1)
+        let mut dm1 = diffs_sdiffs.next().map(|(d, _)| d).unwrap_or(0.); // skip lag 1
 
-            let diff = f32::mul_add(autocorr, autocorr_scale, current_energy);
+        // d'(k-2)
+        let mut dpm2 = 1.;
+        // d'(k-1)
+        let mut dpm1 = 1.;
 
-            cumsum += diff;
+        let mut tau = 1.;
 
-            let current_lag_f = current_lag as f32;
+        let mut p = None;
 
-            let norm_diff = diff * current_lag_f / cumsum.max(1e-6);
+        for (d, sd) in diffs_sdiffs {
+            let next_tau = tau + 1.;
+            let dp = next_tau * d / sd;
 
-            if prev_n_diff < threshold && prev_prev_n_diff > prev_n_diff && norm_diff > prev_n_diff
-            {
-                let y0 = prev_prev_n_diff;
-                let y1 = prev_n_diff;
-                let y2 = norm_diff;
-                let a = (y0 + y2) / 2. - y1;
-                let b = (y2 - y0) / 2.;
-                if f32::abs(a) > 1e-6 {
-                    let tau = current_lag_f - 1. - b / (2. * a);
-                    return Some((Some(tau), unused_lags));
-                }
+            if dpm1 < threshold && dpm2 > dpm1 && dp > dpm1 {
+                // We need a better interpolation scheme than this.
+                let est = tau + util::parabolic_argmin(dm2, dm1, d);
+                p = Some(est);
+                break;
             }
 
-            prev_prev_n_diff = prev_n_diff;
-            prev_n_diff = norm_diff;
+            dpm2 = dpm1;
+            dpm1 = dp;
+            dm2 = dm1;
+            dm1 = d;
+            tau = next_tau;
         }
 
-        Some((None, unused_lags))
+        Some((p, unused_lags))
     }
 }

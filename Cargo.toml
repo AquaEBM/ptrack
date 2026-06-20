@@ -10,8 +10,9 @@ crate-type = ["cdylib"]
 
 [dependencies]
 
-nice-plug = "0"
-nice-plug-egui = "0"
+nice-plug = "0.1"
+nice-plug-egui = "0.1"
+bislice = { git = "https://github.com/AquaEBM/bislice" }
 egui = "0.34.1"
 realfft = "3"
 rtrb = "0.3"
