@@ -96,12 +96,16 @@ impl Plugin for Tuner {
         let sr = Arc::clone(&self.sr);
 
         nice_plug_egui::create_egui_editor(
-            editor_state,
+            Arc::clone(&editor_state),
             editor::EditorState::new(realfft::RealFftPlanner::<f32>::new(), rx),
             Default::default(),
             |_, _, _| {},
             move |ui, _, _, state| {
-                state.ui(ui, sr.load(Ordering::Relaxed));
+                nice_plug_egui::resizable_window::ResizableWindow::new("1").show(
+                    ui,
+                    &editor_state,
+                    |ui| state.ui(ui, sr.load(Ordering::Relaxed)),
+                );
             },
         )
     }

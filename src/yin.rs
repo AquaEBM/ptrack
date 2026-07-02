@@ -51,9 +51,7 @@ impl Yin {
     #[inline(always)]
     #[allow(unused)]
     pub fn fft_len(&self) -> usize {
-        self.window_len
-            .strict_mul(2)
-            .strict_add(self.lag_sup.get().strict_sub(1))
+        Self::length_fft(self.window_len, self.lag_sup)
     }
 
     #[inline(always)]

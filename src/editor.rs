@@ -1,11 +1,11 @@
-use core::num;
-
 use crate::yin;
+use core::num;
+use egui::{Direction, Separator};
 
-const WINDOW_LEN_S: f32 = 0.08;
+const WINDOW_LEN_S: f32 = 0.07;
 const MAX_PERIOD_S: f32 = 0.065;
 
-const YIN_TROUGH_THRESHOLD: f32 = 0.24;
+const YIN_TROUGH_THRESHOLD: f32 = 0.3;
 
 const NOTE_NAMES: [&str; 12] = [
     "C ", "C#", "D ", "D#", "E ", "F ", "F#", "G ", "G#", "A ", "A#", "B ",
@@ -40,33 +40,33 @@ fn display_gui(
         );
     });
 
-    ui.horizontal_centered(|ui| {
-        ui.with_layout(Layout::top_down(Align::Min).with_main_justify(true), |ui| {
+    const NOTE_CLASS_TEXT_SIZE: f32 = 40.;
+
+    ui.columns_const(|[_c1, c2, c3, c4, _c5]| {
+        c2.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            ui.add(Separator::default().spacing(1.));
             ui.label(
                 RichText::new(format!("{:>10.2} Hz", freq))
                     .family(FontFamily::Monospace)
                     .color(Color32::from_rgb(0, 255, 0))
                     .size(24.),
-            )
+            );
         });
 
-        ui.separator();
-
-        ui.with_layout(
-            Layout::top_down(Align::Min).with_main_justify(true),
+        c3.with_layout(
+            Layout::centered_and_justified(Direction::TopDown).with_cross_justify(false),
             |ui| {
                 ui.label(
                     RichText::new(format!("{note_class_name}{note_octave:>2}"))
                         .family(FontFamily::Monospace)
                         .color(Color32::YELLOW)
-                        .size(40.),
-                )
+                        .size(NOTE_CLASS_TEXT_SIZE),
+                );
             },
         );
 
-        ui.separator();
-
-        ui.with_layout(Layout::top_down(Align::Min).with_main_justify(true), |ui| {
+        c4.with_layout(Layout::left_to_right(Align::Center), |ui| {
+            ui.add(Separator::default().spacing(1.));
             ui.label(
                 RichText::new(format!(
                     " {}{:>5.2} cts",
@@ -76,7 +76,7 @@ fn display_gui(
                 .family(FontFamily::Monospace)
                 .color(Color32::YELLOW)
                 .size(24.),
-            )
+            );
         });
     });
 }
