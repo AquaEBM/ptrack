@@ -89,7 +89,7 @@ impl Yin {
 
         ref_zeroed.fill(0.);
 
-        bislice::DoubleSliceMut::from_single(ref_out)
+        bislice::BiSliceMut::from_single(ref_out)
             .copy_from_slice(reference)
             .unwrap();
 
@@ -99,7 +99,7 @@ impl Yin {
 
         sig_zeroed.fill(0.);
 
-        bislice::DoubleSliceMut::from_single(sig_out)
+        bislice::BiSliceMut::from_single(sig_out)
             .copy_from_slice(sig)
             .unwrap();
 
